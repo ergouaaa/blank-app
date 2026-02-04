@@ -41,7 +41,7 @@ if st.button("查询最新费率"):
     # 创建一个列表来存处理好的数据，为了最后显示表格
     result_list = []
     
-    for x in data[-3:]:
+    for x in data[-8:]:
         dt = datetime.fromtimestamp(x["time"] / 1000, tz)
         bps = float(x["fundingRate"]) * 10000
         
