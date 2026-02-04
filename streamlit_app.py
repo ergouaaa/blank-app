@@ -21,7 +21,7 @@ def get_binance_funding_rates(symbol):
     """获取币安最近的资金费率"""
     try:
         # 币安 U本位合约 历史资金费率接口
-        url = "https://fapi.binance.com/fapi/v1/fundingRate"
+        url = "https://fapi.binance.vision/fapi/v1/fundingRate"
         # limit=50 足够覆盖最近几天
         params = {"symbol": symbol, "limit": 50} 
         resp = requests.get(url, params=params, timeout=10)
