@@ -4,56 +4,113 @@ import time
 from datetime import datetime, timezone, timedelta
 import pandas as pd
 
-# 1. 设置网页标题
-st.title("Hyperliquid 资金费率查询")
+# ---------------------------------------------------------
+# 1. 页面基础设置
+# ---------------------------------------------------------
+st.set_page_config(page_title="白银资金费率监控", layout="wide")
+st.title("Hyperliquid vs Binance 白银费率对比")
 
-# 2. 添加一个输入框，默认是你的 xyz:SILVER，但也可以查别的
-coin = st.text_input("请输入币种代码", "xyz:SILVER")
+# 硬编码写死币种，不需要手动输入
+HL_COIN = "xyz:SILVER"
+BN_SYMBOL = "XAGUSDT"
 
-# 3. 添加一个按钮，点击才开始查询
-if st.button("查询最新费率"):
+# ---------------------------------------------------------
+# 2. 获取币安数据的函数
+# ---------------------------------------------------------
+def get_binance_funding_rates(symbol):
+    """获取币安最近的资金费率"""
+    try:
+        # 币安 U本位合约 历史资金费率接口
+        url = "https://fapi.binance.com/fapi/v1/fundingRate"
+        # limit=50 足够覆盖最近几天
+        params = {"symbol": symbol, "limit": 50} 
+        resp = requests.get(url, params=params, timeout=10)
+        data = resp.json()
+        
+        rates_map = {}
+        if isinstance(data, list):
+            for item in data:
+                ts = item["fundingTime"]
+                rate = float(item["fundingRate"]) * 10000 # 转为 bps
+                
+                # 将时间戳对齐到整小时（去掉毫秒级误差），方便后续对比
+                aligned_ts = (ts // 3600000) * 3600000 
+                rates_map[aligned_ts] = rate
+        return rates_map
+    except Exception as e:
+        st.error(f"币安接口连接失败: {e}")
+        return {}
+
+# ---------------------------------------------------------
+# 3. 主程序逻辑
+# ---------------------------------------------------------
+if st.button("刷新最新费率"):
+    
+    # --- A. 获取 Hyperliquid 数据 ---
     url = "https://api.hyperliquid.xyz/info"
     now = int(time.time() * 1000)
-
+    
+    # 查过去24小时数据
     payload = {
         "type": "fundingHistory",
-        "coin": coin,
+        "coin": HL_COIN,
         "startTime": now - 24 * 60 * 60 * 1000
     }
 
-    # 添加加载提示
-    with st.spinner('正在请求数据...'):
+    with st.spinner('正在同步双边数据...'):
+        # 并行获取两边的数据
         try:
-            resp = requests.post(url, json=payload, timeout=10)
-            data = resp.json()
+            hl_resp = requests.post(url, json=payload, timeout=10)
+            hl_data = hl_resp.json()
         except Exception as e:
-            st.error(f"请求失败: {e}")
-            st.stop() # 停止后续代码运行
+            st.error(f"Hyperliquid 请求失败: {e}")
+            st.stop()
 
-    # 4. 逻辑判断：如果没有数据
-    if not isinstance(data, list) or len(data) == 0:
-        st.warning(f"未找到数据: {data}") # 用 warning 比 print 更显眼
-        st.stop() # 替代 exit()
+        bn_map = get_binance_funding_rates(BN_SYMBOL)
 
-    tz = timezone(timedelta(hours=8))  # GMT+8
+    if not isinstance(hl_data, list) or len(hl_data) == 0:
+        st.warning("未获取到 Hyperliquid 数据")
+        st.stop()
+
+    # --- B. 数据对齐与展示 ---
+    tz = timezone(timedelta(hours=8))  # 北京时间 GMT+8
     
-    # 5. 处理数据并展示
-    # 创建一个列表来存处理好的数据，为了最后显示表格
-    result_list = []
+    # 只取最后 12 条数据（最近12小时），你可以改为 8 或 24
+    recent_hl_data = hl_data[-12:] 
     
-    for x in data[-8:]:
-        dt = datetime.fromtimestamp(x["time"] / 1000, tz)
-        bps = float(x["fundingRate"]) * 10000
+    # 倒序：最新的时间显示在最上面
+    recent_hl_data.reverse()
+
+    table_rows = []
+    
+    for x in recent_hl_data:
+        # Hyperliquid 的时间戳
+        hl_ts = x["time"]
+        dt = datetime.fromtimestamp(hl_ts / 1000, tz)
+        time_str = dt.strftime("%Y-%m-%d %H:00")
         
-        # 存入列表
-        result_list.append({
-            "时间 (GMT+8)": dt.strftime("%Y-%m-%d %H:00"),
-            "费率 (bps)": f"{bps:.2f} bps"
+        # Hyperliquid 费率
+        hl_bps = float(x["fundingRate"]) * 10000
+        
+        # 寻找对应的币安费率
+        # 逻辑：检查当前这个小时，币安有没有结算记录
+        aligned_ts = (hl_ts // 3600000) * 3600000
+        
+        if aligned_ts in bn_map:
+            # 如果币安在这个时间点有数据，就显示
+            bn_val = f"{bn_map[aligned_ts]:.4f}"
+        else:
+            # 如果没有（比如币安还没到4小时/8小时结算点），就留空
+            bn_val = "" 
+
+        table_rows.append({
+            "时间 (GMT+8)": time_str,
+            "Hyperliquid (bps)": f"{hl_bps:.4f}",
+            "Binance (bps)": bn_val  # 有值则显示，无值则空
         })
 
-    # 6. 直接显示为表格，比 print 更好看
-    st.table(result_list)
+    # --- C. 渲染表格 ---
+    df = pd.DataFrame(table_rows)
     
-    # 如果你还是喜欢原来的文本格式，也可以保留下面的代码：
-    # for item in result_list:
-    #     st.write(item["时间 (GMT+8)"], item["费率 (bps)"])
+    # 使用 st.table 展示，清晰整齐
+    st.table(df)
