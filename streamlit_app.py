@@ -43,7 +43,7 @@ if not isinstance(data, list) or len(data) == 0:
 tz = timezone(timedelta(hours=8))  # GMT+8
 
 # 取最后 8 条数据
-recent_data = data[-8:] 
+recent_data = data[-10:] 
 
 # 建议：既然你是要看“最新”，通常把最新的时间放在第一行比较方便
 # 我把下面这行注释解开了，这样最新的时间会在最上面 (如果你不喜欢，可以再把这行注释掉)
