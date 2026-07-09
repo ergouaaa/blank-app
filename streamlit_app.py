@@ -75,18 +75,20 @@ if not isinstance(data, list) or len(data) == 0:
 
 tz = timezone(timedelta(hours=8))  # GMT+8
 
-# 取最后 10 条数据
-recent_data = data[-10:]
+# 取最后 24 条数据
+recent_data = data[-24:]
 
 # 建议：既然你是要看“最新”，通常把最新的时间放在第一行比较方便
 # 我把下面这行注释解开了，这样最新的时间会在最上面 (如果你不喜欢，可以再把这行注释掉)
 recent_data = reversed(recent_data)
 
 result_list = []
+total_bps = 0
 
 for x in recent_data:
     dt = datetime.fromtimestamp(x["time"] / 1000, tz)
     bps = float(x["fundingRate"]) * 10000
+    total_bps += bps
 
     result_list.append({
         "时间 (GMT+8)": dt.strftime("%Y-%m-%d %H:00"),
@@ -95,3 +97,5 @@ for x in recent_data:
 
 # 显示表格 (Streamlit 默认就会居中显示这个表格)
 st.table(result_list)
+
+st.metric("最近 24 条费率合计", f"{total_bps:.2f} bps")
